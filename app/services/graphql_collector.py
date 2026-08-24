@@ -1,4 +1,4 @@
-"""High-performance batched GraphQL data collector for GitHub organizations."""
+"""High-performance batched GraphQL data collector for GitHub organizations and accounts."""
 
 import asyncio
 import logging
@@ -11,9 +11,8 @@ logger = logging.getLogger(__name__)
 
 ORG_REPOSITORIES_QUERY = """
 query OrgReposWithCollaborators($org: String!, $cursor: String, $affiliation: CollaboratorAffiliation) {
-  organization(login: $org) {
+  repositoryOwner(login: $org) {
     login
-    name
     repositories(first: 50, after: $cursor, orderBy: {field: NAME, direction: ASC}) {
       pageInfo {
         hasNextPage
@@ -36,7 +35,7 @@ query OrgReposWithCollaborators($org: String!, $cursor: String, $affiliation: Co
           edges {
             permission
             permissionSources {
-              role
+              permission
               source {
                 ... on Team {
                   name
@@ -69,7 +68,7 @@ query RepoCollaboratorsPagination($owner: String!, $name: String!, $cursor: Stri
       edges {
         permission
         permissionSources {
-          role
+          permission
           source {
             ... on Team {
               name
@@ -102,7 +101,7 @@ class GraphQLCollector:
         affiliation: AffiliationFilter = AffiliationFilter.ALL,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve all repositories and their collaborator edges for an organization.
+        Retrieve all repositories and their collaborator edges for an organization or account.
         Returns a list of raw repository objects with complete collaborator lists.
         """
         affiliation_param = affiliation.value if affiliation != AffiliationFilter.ALL else None
@@ -110,7 +109,7 @@ class GraphQLCollector:
         cursor: Optional[str] = None
         has_next_repo_page = True
 
-        logger.info("Starting GraphQL collection for organization '%s' (affiliation: %s)", org_name, affiliation.value)
+        logger.info("Starting GraphQL collection for '%s' (affiliation: %s)", org_name, affiliation.value)
 
         # 1. Page through organization repositories
         while has_next_repo_page:
@@ -119,10 +118,10 @@ class GraphQLCollector:
                 variables["affiliation"] = affiliation_param
 
             data = await self.client.execute_graphql(ORG_REPOSITORIES_QUERY, variables)
-            org_data = data.get("organization")
+            org_data = data.get("repositoryOwner") or data.get("organization")
 
             if not org_data:
-                raise GitHubNotFoundError(f"Organization '{org_name}' not found or accessible.")
+                raise GitHubNotFoundError(f"Organization or account '{org_name}' not found or accessible.")
 
             repos_page = org_data.get("repositories", {})
             nodes = repos_page.get("nodes", [])
@@ -135,23 +134,24 @@ class GraphQLCollector:
             has_next_repo_page = page_info.get("hasNextPage", False)
             cursor = page_info.get("endCursor")
 
-        logger.info("Found %d repositories in organization '%s'. Checking for deep collaborator pagination...", len(repositories), org_name)
+        logger.info("Found %d repositories in '%s'. Checking for deep collaborator pagination...", len(repositories), org_name)
 
         # 2. Concurrently fetch remaining collaborator pages for any repos with >100 collaborators
         deep_pagination_tasks = []
         for repo in repositories:
             collabs = repo.get("collaborators", {})
-            page_info = collabs.get("pageInfo", {})
-            if page_info.get("hasNextPage", False):
-                deep_pagination_tasks.append(
-                    self._fetch_all_remaining_collaborators(
-                        owner=org_name,
-                        repo_name=repo["name"],
-                        initial_cursor=page_info.get("endCursor"),
-                        affiliation=affiliation_param,
-                        target_edges_list=collabs.setdefault("edges", []),
+            if collabs:
+                page_info = collabs.get("pageInfo", {})
+                if page_info.get("hasNextPage", False):
+                    deep_pagination_tasks.append(
+                        self._fetch_all_remaining_collaborators(
+                            owner=org_name,
+                            repo_name=repo["name"],
+                            initial_cursor=page_info.get("endCursor"),
+                            affiliation=affiliation_param,
+                            target_edges_list=collabs.setdefault("edges", []),
+                        )
                     )
-                )
 
         if deep_pagination_tasks:
             logger.info("Fetching remaining collaborators for %d large repositories concurrently...", len(deep_pagination_tasks))

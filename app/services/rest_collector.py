@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional
+from app.core.exceptions import GitHubNotFoundError
 from app.models.schemas import AffiliationFilter
 from app.services.github_client import GitHubClient
 
@@ -23,7 +24,7 @@ class RestCollector:
         """
         Fetch all repositories in the organization and their collaborators via REST API concurrently.
         """
-        logger.info("Starting REST collection for organization '%s'", org_name)
+        logger.info("Starting REST collection for '%s'", org_name)
 
         # 1. Fetch all repositories in organization (paginated)
         repositories = await self._fetch_all_org_repositories(org_name)
@@ -42,15 +43,25 @@ class RestCollector:
         return enriched_repos
 
     async def _fetch_all_org_repositories(self, org_name: str) -> List[Dict[str, Any]]:
-        """Fetch all repositories under an organization with REST pagination."""
+        """Fetch all repositories under an organization or user with REST pagination."""
         repos = []
         page = 1
         per_page = 100
+        is_user_endpoint = False
 
         while True:
-            endpoint = f"orgs/{org_name}/repos"
+            base = "users" if is_user_endpoint else "orgs"
+            endpoint = f"{base}/{org_name}/repos"
             params = {"type": "all", "per_page": per_page, "page": page}
-            page_data = await self.client.get_rest(endpoint, params=params)
+
+            try:
+                page_data = await self.client.get_rest(endpoint, params=params)
+            except GitHubNotFoundError:
+                if not is_user_endpoint and page == 1:
+                    # Fallback to user repos if org is 404
+                    is_user_endpoint = True
+                    continue
+                raise
 
             if not isinstance(page_data, list) or not page_data:
                 break
@@ -87,7 +98,6 @@ class RestCollector:
                     break
                 page += 1
             except Exception as e:
-                # If we don't have access to list collaborators on a specific repo, log and continue
                 logger.warning("Could not fetch collaborators for %s/%s: %s", org_name, repo_name, e)
                 break
 

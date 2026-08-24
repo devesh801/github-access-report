@@ -17,9 +17,8 @@ async def test_graphql_collector_pagination():
     # Page 1 response (2 repos, hasNextPage = True)
     page1_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "test-org",
-                "name": "Test Org",
                 "repositories": {
                     "pageInfo": {"hasNextPage": True, "endCursor": "cursor_page1"},
                     "totalCount": 3,
@@ -55,9 +54,8 @@ async def test_graphql_collector_pagination():
     # Page 2 response (1 repo, hasNextPage = False)
     page2_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "test-org",
-                "name": "Test Org",
                 "repositories": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                     "totalCount": 3,

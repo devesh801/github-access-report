@@ -9,14 +9,10 @@ from app.core.auth import GitHubAuthProvider
 from app.core.cache import TTLCache
 from app.core.rate_limiter import GitHubRateLimitTracker
 from app.services.github_client import GitHubClient
-from app.services.graphql_collector import GraphQLCollector
-from app.services.rest_collector import RestCollector
-from app.services.report_aggregator import AccessReportAggregator
 
 # Application-level singletons
 _global_cache: Optional[TTLCache] = None
 _global_rate_limiter = GitHubRateLimitTracker()
-_global_auth_provider = GitHubAuthProvider()
 
 
 def get_cache(settings: Settings = Depends(get_settings)) -> TTLCache:
@@ -36,8 +32,8 @@ def get_rate_limiter() -> GitHubRateLimitTracker:
 
 
 def get_auth_provider(settings: Settings = Depends(get_settings)) -> GitHubAuthProvider:
-    """Return auth provider."""
-    return _global_auth_provider
+    """Return auth provider initialized with current settings."""
+    return GitHubAuthProvider(settings=settings)
 
 
 def get_http_client(request: Request) -> httpx.AsyncClient:

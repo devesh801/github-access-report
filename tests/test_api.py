@@ -13,7 +13,6 @@ from app.core.cache import TTLCache
 
 @pytest.fixture
 def client():
-    # Use a single dedicated cache instance for all dependencies in the test session
     shared_test_cache = TTLCache(default_ttl=60, max_entries=50)
     app.dependency_overrides[get_cache] = lambda: shared_test_cache
     with TestClient(app) as test_client:
@@ -42,9 +41,8 @@ def test_root_endpoint(client):
 def test_get_access_report_success(client, sample_graphql_repos_data):
     mock_graphql_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "acme-corp",
-                "name": "Acme Corporation",
                 "repositories": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                     "totalCount": len(sample_graphql_repos_data),
@@ -67,7 +65,6 @@ def test_get_access_report_success(client, sample_graphql_repos_data):
     assert data["cached"] is False
     assert len(data["users"]) == 4
 
-    # Summary verification
     summary = data["summary"]
     assert summary["total_repositories"] == 2
     assert summary["total_users"] == 4
@@ -78,9 +75,8 @@ def test_get_access_report_success(client, sample_graphql_repos_data):
 def test_get_access_report_cached(client, sample_graphql_repos_data):
     mock_graphql_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "acme-corp",
-                "name": "Acme Corporation",
                 "repositories": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                     "totalCount": len(sample_graphql_repos_data),
@@ -106,7 +102,7 @@ def test_get_access_report_cached(client, sample_graphql_repos_data):
     resp2 = client.get("/api/v1/orgs/acme-corp/access-report", headers=headers)
     assert resp2.status_code == 200
     assert resp2.json()["cached"] is True
-    assert route.call_count == 1  # No additional network call!
+    assert route.call_count == 1
 
     # Third request with refresh=true -> bypasses cache and calls GitHub API
     resp3 = client.get("/api/v1/orgs/acme-corp/access-report?refresh=true", headers=headers)
@@ -119,9 +115,8 @@ def test_get_access_report_cached(client, sample_graphql_repos_data):
 def test_get_access_report_filter_min_permission(client, sample_graphql_repos_data):
     mock_graphql_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "acme-corp",
-                "name": "Acme Corporation",
                 "repositories": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                     "totalCount": len(sample_graphql_repos_data),
@@ -143,7 +138,6 @@ def test_get_access_report_filter_min_permission(client, sample_graphql_repos_da
 
     assert response.status_code == 200
     data = response.json()
-    # Only Alice (ADMIN) and Bob (WRITE/MAINTAIN)
     assert len(data["users"]) == 2
     logins = [u["login"] for u in data["users"]]
     assert "alice" in logins
@@ -152,8 +146,7 @@ def test_get_access_report_filter_min_permission(client, sample_graphql_repos_da
 
 @respx.mock
 def test_unauthorized_error_when_no_credentials(client):
-    # Override settings to have no token configured
-    app.dependency_overrides[get_settings] = lambda: Settings(GITHUB_TOKEN=None, GITHUB_APP_ID=None)
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, GITHUB_TOKEN=None, GITHUB_APP_ID=None)
 
     response = client.get("/api/v1/orgs/acme-corp/access-report")
     assert response.status_code == 401
@@ -168,7 +161,7 @@ def test_not_found_error(client):
         "errors": [
             {
                 "type": "NOT_FOUND",
-                "message": "Could not resolve to an Organization with the login of 'non-existent-org'.",
+                "message": "Could not resolve to a User or Organization with the login of 'non-existent-org'.",
             }
         ]
     }
@@ -188,7 +181,7 @@ def test_not_found_error(client):
 def test_list_organization_users(client, sample_graphql_repos_data):
     mock_graphql_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "acme-corp",
                 "repositories": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
@@ -218,7 +211,7 @@ def test_list_organization_users(client, sample_graphql_repos_data):
 def test_list_organization_repos(client, sample_graphql_repos_data):
     mock_graphql_resp = {
         "data": {
-            "organization": {
+            "repositoryOwner": {
                 "login": "acme-corp",
                 "repositories": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
