@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  access-report-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: github-access-report-service
+    ports:
+      - "8000:8000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      - MAX_CONCURRENT_REQUESTS=10
+      - CACHE_ENABLED=true
+      - CACHE_TTL_SECONDS=300
+      - DEFAULT_COLLECTOR=graphql
+    env_file:
+      - .env
+    restart: unless-stopped
